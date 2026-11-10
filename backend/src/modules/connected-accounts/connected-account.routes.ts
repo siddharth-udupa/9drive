@@ -6,6 +6,7 @@ import { prisma } from '../../config/prisma.js'
 import { requireAuth, type AuthRequest } from '../../middleware/auth.middleware.js'
 import { decryptText, encryptText, hashToken, randomToken } from '../../utils/crypto.js'
 import { hashPassword } from '../../utils/password.js'
+import { normalizeEmail } from '../../utils/email.js'
 import { createOAuthClient, syncGoogleQuota } from '../google/google.service.js'
 import { syncS3Quota, testS3Connection } from '../s3/s3.service.js'
 
@@ -187,7 +188,7 @@ connectedAccountRouter.get('/google/callback', async (req, res, next) => {
     const oauth2 = google.oauth2({ version: 'v2', auth: client })
     const profile = await oauth2.userinfo.get()
     const providerAccountId = profile.data.id
-    const email = profile.data.email
+    const email = profile.data.email ? normalizeEmail(profile.data.email) : undefined
     if (!providerAccountId || !email) return res.status(400).json({ code: 'GOOGLE_PROFILE_FAILED', message: 'Google profile missing id or email.' })
 
     if (oauthState.flow === 'login') {

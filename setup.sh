@@ -21,9 +21,9 @@ random_key() {
 }
 
 if [ ! -f "$backend_dir/.env" ]; then
-  printf "MySQL DATABASE_URL [mysql://root@localhost:3306/9drive]: "
+  printf "PostgreSQL DATABASE_URL [postgresql://postgres@localhost:5432/9drive?schema=public]: "
   IFS= read -r database_url
-  database_url=${database_url:-mysql://root@localhost:3306/9drive}
+  database_url=${database_url:-postgresql://postgres@localhost:5432/9drive?schema=public}
 
   {
     printf 'DATABASE_URL="%s"\n' "$database_url"

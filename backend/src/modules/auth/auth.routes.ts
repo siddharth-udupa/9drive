@@ -6,6 +6,7 @@ import { env } from '../../config/env.js'
 import { requireAuth, type AuthRequest } from '../../middleware/auth.middleware.js'
 import { hashPassword, verifyPassword } from '../../utils/password.js'
 import { encryptText, hashToken, randomToken } from '../../utils/crypto.js'
+import { normalizeEmail } from '../../utils/email.js'
 import { signAccessToken } from '../../utils/jwt.js'
 import { createOAuthClient, syncGoogleQuota } from '../google/google.service.js'
 
@@ -44,9 +45,10 @@ authRouter.post('/register', async (req, res, next) => {
   try {
     const body = registerSchema.parse(req.body)
     if (!(await verifyCaptcha(body.captchaToken))) return res.status(400).json({ code: 'CAPTCHA_FAILED', message: 'Captcha verification failed.' })
-    const existing = await prisma.user.findUnique({ where: { email: body.email } })
+    const email = normalizeEmail(body.email)
+    const existing = await prisma.user.findUnique({ where: { email } })
     if (existing) return res.status(409).json({ code: 'AUTH_EMAIL_TAKEN', message: 'Email already registered.' })
-    const user = await prisma.user.create({ data: { name: body.name, email: body.email, passwordHash: await hashPassword(body.password) } })
+    const user = await prisma.user.create({ data: { name: body.name, email, passwordHash: await hashPassword(body.password) } })
     const tokens = await createSession(user.id, req)
     return res.status(201).json({ ...tokens, user: { id: user.id, name: user.name, email: user.email } })
   } catch (error) {
@@ -57,7 +59,7 @@ authRouter.post('/register', async (req, res, next) => {
 authRouter.post('/login', async (req, res, next) => {
   try {
     const body = loginSchema.parse(req.body)
-    const user = await prisma.user.findUnique({ where: { email: body.email } })
+    const user = await prisma.user.findUnique({ where: { email: normalizeEmail(body.email) } })
     if (!user || !(await verifyPassword(user.passwordHash, body.password))) return res.status(401).json({ code: 'AUTH_INVALID_CREDENTIALS', message: 'Invalid email or password.' })
     const tokens = await createSession(user.id, req)
     return res.json({ ...tokens, user: { id: user.id, name: user.name, email: user.email } })
@@ -100,7 +102,7 @@ authRouter.get('/google/callback', async (req, res) => {
     const oauth2 = google.oauth2({ version: 'v2', auth: client })
     const profile = await oauth2.userinfo.get()
     const providerAccountId = profile.data.id
-    const email = profile.data.email
+    const email = profile.data.email ? normalizeEmail(profile.data.email) : undefined
     if (!providerAccountId || !email) return res.redirect(`${env.FRONTEND_URL}/google-auth?status=error`)
 
     const name = profile.data.name || email.split('@')[0] || 'Google User'

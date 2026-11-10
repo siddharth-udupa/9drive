@@ -10,6 +10,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
+    "migrate:mysql-to-postgres": "tsx src/scripts/migrate-mysql-to-postgres.ts",
     "seed:google-config": "tsx src/scripts/seed-google-config.ts",
     "seed:google-config:docker": "tsx src/scripts/seed-google-config-if-present.ts",
     "test:s3": "tsx src/scripts/test-s3-connection.ts",
@@ -42,6 +43,7 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.9.1",
+    "mysql2": "^3.24.6",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3"
   }

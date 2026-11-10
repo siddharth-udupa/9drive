@@ -59,7 +59,7 @@ fileRouter.get('/', async (req: AuthRequest, res, next) => {
       userId: req.user!.id,
       status: 'active',
       ...(query.folderId ? { folderId: query.folderId } : {}),
-      ...(query.q ? { name: { contains: query.q } } : {}),
+      ...(query.q ? { name: { contains: query.q, mode: 'insensitive' } } : {}),
       ...(query.accountId ? { connectedAccountId: query.accountId } : {}),
       ...(query.kind ? { mimeType: { in: typeFilters[query.kind] || [] } } : {}),
       ...(query.minSize !== undefined || query.maxSize !== undefined ? {
@@ -128,13 +128,13 @@ fileRouter.get('/trash', async (req: AuthRequest, res, next) => {
       where: {
         userId: req.user!.id,
         status: 'deleted',
-        ...(query.q ? { name: { contains: query.q } } : {})
+        ...(query.q ? { name: { contains: query.q, mode: 'insensitive' } } : {})
       },
       include: {
         connectedAccount: { select: { id: true, email: true, provider: true } },
         folder: { select: { id: true, name: true } }
       },
-      orderBy: { deletedAt: 'desc' }
+      orderBy: { deletedAt: { sort: 'desc', nulls: 'last' } }
     })
     return res.json({ files: files.map((file) => ({ ...file, sizeBytes: file.sizeBytes.toString() })) })
   } catch (error) {
@@ -320,7 +320,10 @@ fileRouter.post('/:id/public-permission', requireAuth, async (req: AuthRequest, 
     const metadata = await drive.files.get({ fileId: file.providerFileId, fields: 'webViewLink,webContentLink' })
     return res.json({ status: 'ok', url: metadata.data.webViewLink ?? metadata.data.webContentLink })
   } catch (error: any) {
-    return res.status(500).json({ code: 'GOOGLE_API_ERROR', message: error.message || 'Failed to update Google Drive permissions.' })
+    if (error instanceof Error && /prisma\.|invocation in/i.test(error.message)) {
+      return res.status(404).json({ code: 'NOT_FOUND', message: 'The requested file was not found.' })
+    }
+    return res.status(500).json({ code: 'GOOGLE_API_ERROR', message: error?.message || 'Failed to update Google Drive permissions.' })
   }
 })
 

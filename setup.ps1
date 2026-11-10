@@ -27,9 +27,9 @@ $backendEnv = Join-Path $backendDir ".env"
 $frontendEnv = Join-Path $frontendDir ".env"
 
 if (-not (Test-Path -LiteralPath $backendEnv)) {
-    $databaseUrl = Read-Host "MySQL DATABASE_URL [mysql://root@localhost:3306/9drive]"
+    $databaseUrl = Read-Host "PostgreSQL DATABASE_URL [postgresql://postgres@localhost:5432/9drive?schema=public]"
     if ([string]::IsNullOrWhiteSpace($databaseUrl)) {
-        $databaseUrl = "mysql://root@localhost:3306/9drive"
+        $databaseUrl = "postgresql://postgres@localhost:5432/9drive?schema=public"
     }
 
     @(

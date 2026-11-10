@@ -10,7 +10,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-4f46e5" /></a>
   <img alt="Node.js 20+" src="https://img.shields.io/badge/node-20%2B-339933?logo=node.js&logoColor=white" />
-  <img alt="MySQL 8+" src="https://img.shields.io/badge/mysql-8%2B-4479A1?logo=mysql&logoColor=white" />
+  <img alt="PostgreSQL 14+" src="https://img.shields.io/badge/postgresql-14%2B-4169E1?logo=postgresql&logoColor=white" />
   <img alt="Docker ready" src="https://img.shields.io/badge/docker-ready-2496ED?logo=docker&logoColor=white" />
   <a href="https://9drive.zenhosta.com"><img alt="Live preview" src="https://img.shields.io/badge/live-preview-6366f1" /></a>
 </p>
@@ -103,7 +103,7 @@ Pick the option that suits you. Docker is the easiest.
 
 ### Option A: Docker (recommended)
 
-You only need Docker. MySQL is included.
+You only need Docker. PostgreSQL is included.
 
 ```bash
 git clone https://github.com/zenhosta/9drive.git
@@ -123,13 +123,13 @@ What happens behind the scenes:
 | -------- | ----------------------- |
 | Frontend | http://localhost:5173   |
 | Backend  | http://localhost:4000   |
-| MySQL    | localhost:3306          |
+| PostgreSQL | internal (`postgres:5432`) |
 
 <details>
 <summary><b>Useful Docker commands</b></summary>
 
 ```bash
-docker compose logs -f backend      # backend logs (also: frontend, mysql)
+docker compose logs -f backend      # backend logs (also: frontend, postgres)
 docker compose exec backend npm run seed:google-config   # re-save Google OAuth config from .env
 docker compose down                 # stop
 docker compose down -v              # stop and delete the database volume
@@ -139,7 +139,7 @@ docker compose down -v              # stop and delete the database volume
 
 ### Option B: Run locally (for development)
 
-You need **Node.js 20+**, **npm**, and **MySQL 8+** running on your machine.
+You need **Node.js 20+**, **npm**, and **PostgreSQL 14+** running on your machine.
 
 **1. Run the setup script.** It writes `backend/.env` and `frontend/.env` with secure random keys, installs dependencies, and generates the Prisma client.
 
@@ -153,7 +153,7 @@ bash ./setup.sh
 powershell -ExecutionPolicy Bypass -File .\setup.ps1
 ```
 
-Enter your MySQL URL when asked (default `mysql://root@localhost:3306/9drive`). You can leave the Google credentials empty for now.
+Enter your PostgreSQL URL when asked (default `postgresql://postgres@localhost:5432/9drive?schema=public`). You can leave the Google credentials empty for now.
 
 **2. Create the tables and start both apps** in two terminals:
 
@@ -174,13 +174,13 @@ npm run dev          # http://localhost:5173
 ```bash
 cd backend && npm install
 cd ../frontend && npm install
-mysql -u root -e "CREATE DATABASE IF NOT EXISTS 9drive;"
+createdb 9drive
 ```
 
 Create `backend/.env`:
 
 ```env
-DATABASE_URL="mysql://root@localhost:3306/9drive"
+DATABASE_URL="postgresql://postgres@localhost:5432/9drive?schema=public"
 APP_PORT=4000
 FRONTEND_URL="http://localhost:5173"
 JWT_ACCESS_SECRET="change-this-jwt-secret-at-least-32-chars"
@@ -206,6 +206,41 @@ VITE_RECAPTCHA_SITE_KEY=
 Then run `npm run prisma:migrate` in `backend/` and start both dev servers as shown above.
 
 </details>
+
+### Migrating an existing MySQL install to PostgreSQL
+
+The repository now ships a PostgreSQL baseline. Existing MySQL data is moved with the
+`migrate:mysql-to-postgres` script, which normalizes emails to lowercase, preserves IDs,
+timestamps, bigint and JSON values, and verifies row counts after copying. The old MySQL
+migration history is kept under `backend/prisma/migrations-mysql/` for reference.
+
+1. **Stop writes and back up MySQL.**
+   ```bash
+   mysqldump --single-transaction --routines --triggers \
+     -u root -p 9drive > 9drive-mysql-backup.sql
+   ```
+2. **Create an empty PostgreSQL database** and point `DATABASE_URL` at it.
+   ```bash
+   createdb 9drive
+   export DATABASE_URL="postgresql://postgres@localhost:5432/9drive?schema=public"
+   ```
+3. **Create the PostgreSQL schema.**
+   ```bash
+   cd backend
+   npm run db:migrate:deploy
+   ```
+4. **Copy the data.** Keep the old MySQL connection string in `MYSQL_DATABASE_URL`.
+   ```bash
+   MYSQL_DATABASE_URL="mysql://root@localhost:3306/9drive" \
+     npm run migrate:mysql-to-postgres
+   ```
+   The script refuses to write into a non-empty target. If you are re-running it during a
+   maintenance window and intentionally want to erase the target first, add `-- --force`.
+5. **Update the app environment** (`DATABASE_URL` / Docker `POSTGRES_*` values), restart,
+   and smoke-test login with a mixed-case email, file search, invites, uploads, shares, and
+   previews.
+
+Keep the MySQL dump and database until you have verified the PostgreSQL install.
 
 ### Your first five minutes
 
@@ -242,7 +277,7 @@ Google sign-in and Drive access need a free OAuth client from **Google Cloud Con
    - **In the app (easiest):** log in, open **Settings → Google Credentials**, paste the Client ID, Client Secret, and Redirect URI, then click **Save Configuration**.
    - **From the command line:** put `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REDIRECT_URI` in `backend/.env` and run `cd backend && npm run seed:google-config`. With Docker, use `docker compose exec backend npm run seed:google-config`.
 
-Either way, the credentials are encrypted and stored in MySQL as one global config. Google sign-in uses it too.
+Either way, the credentials are encrypted and stored in PostgreSQL as one global config. Google sign-in uses it too.
 
 </details>
 
@@ -253,7 +288,7 @@ Either way, the credentials are encrypted and stored in MySQL as one global conf
 
 | Variable | What it does |
 | --- | --- |
-| `DATABASE_URL` | MySQL connection string. |
+| `DATABASE_URL` | PostgreSQL connection string. |
 | `APP_PORT` | Backend port (default `4000`). |
 | `FRONTEND_URL` | The frontend's URL. CORS only allows this origin. |
 | `JWT_ACCESS_SECRET` | Secret for signing access tokens. At least 32 characters, random. |
@@ -306,7 +341,7 @@ Captcha only turns on when **both** `VITE_RECAPTCHA_SITE_KEY` and `RECAPTCHA_SEC
 
 Production tips:
 - Put the frontend and backend behind an HTTPS reverse proxy.
-- Don't expose the MySQL port to the internet.
+- Don't expose the PostgreSQL port to the internet.
 - Rebuild the frontend whenever `VITE_API_URL` or `VITE_RECAPTCHA_SITE_KEY` changes.
 - Publish the OAuth consent screen when you're ready. Google may ask to verify public apps.
 
@@ -404,6 +439,25 @@ External API  POST /api/v1/uploads   (API key with the files:upload scope)
 ## Troubleshooting
 
 <details>
+<summary><b>Prisma can't reach a Neon (serverless) database (`P1001`)</b></summary>
+
+Neon databases suspend after a few minutes of inactivity and wake on the next connection, which can take a few seconds. Prisma's default connect timeout is short, and an invalid/unsupported connection-string parameter makes it fail outright.
+
+1. Fix the connection string in `backend/.env`:
+   - Use `sslmode=require` (not `full-verify` — that is not a valid sslmode value; use `verify-full` only if you also provide Neon's CA certificate).
+   - Drop `channel_binding=require` unless your client/libpq version supports it; prefer `sslmode=require`.
+   - For **migrations** (`npm run db:migrate:deploy`), use Neon's **direct** (non-pooled) connection string, not the `-pooler` host.
+   - For the running app with the pooled host, add `?pgbouncer=true&connection_limit=1`.
+   - Add `connect_timeout=30` so a cold start has time to wake the compute.
+   Example:
+   ```env
+   DATABASE_URL="postgresql://USER:PASSWORD@ep-xxx-xxx.c-4.REGION.aws.neon.tech/neondb?sslmode=require&connect_timeout=30"
+   ```
+2. Wake the database first: open the Neon console or run `psql "$DATABASE_URL" -c 'select 1'`.
+3. Re-run `cd backend && npm run db:migrate:deploy`.
+
+</details>
+<details>
 <summary><b>"Google Drive API has not been used in project … or it is disabled"</b></summary>
 
 Enable the Google Drive API in the **same** Cloud project as your OAuth client (*APIs & Services → Library*), then wait a few minutes.
@@ -434,14 +488,14 @@ Vite bakes `VITE_API_URL` into the build. Rebuild the frontend, or with Docker r
 ## Security
 
 - Uploads stream through the backend straight to Google Drive or S3. **Nothing is stored on the server's disk.**
-- Google tokens and S3 credentials are encrypted in MySQL. App refresh tokens, API keys, preview tokens, and auth-handoff tokens are stored only as hashes.
+- Google tokens and S3 credentials are encrypted in PostgreSQL. App refresh tokens, API keys, preview tokens, and auth-handoff tokens are stored only as hashes.
 - CORS only allows `FRONTEND_URL`.
 - Never commit `.env` files or share `TOKEN_ENCRYPTION_KEY`, `JWT_ACCESS_SECRET`, `RECAPTCHA_SECRET_KEY`, OAuth client secrets, or raw share links you want to keep private.
 
 ## Project structure
 
 ```txt
-backend/    Express 5 + TypeScript API, Prisma (MySQL), Google Drive and S3 integrations
+backend/    Express 5 + TypeScript API, Prisma (PostgreSQL), Google Drive and S3 integrations
 frontend/   React 19 + Vite + Tailwind CSS 4 app (installable PWA)
 docs/       README screenshots and trailer
 ```
