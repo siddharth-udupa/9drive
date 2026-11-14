@@ -28,7 +28,10 @@ export function UploadProvider({ children }: { children: ReactNode }) {
   const [resumableSessions, setResumableSessions] = useState<Record<string, ResumableSession>>({})
 
   async function uploadSingleFileResumable(file: File, folderId: string | null, onProgress: (percent: number) => void, sessionIdToRetry?: string, targetAccountId?: string | null) {
-    const CHUNK_SIZE = 5 * 1024 * 1024 // 5MB chunks (must be multiple of 256KB for Google Drive)
+    // 4MB chunks (multiple of 256KB for Google Drive). Must stay below Vercel's
+    // 4.5MB function request-body limit, otherwise chunks are rejected at the
+    // platform with a CORS-less 413 (FUNCTION_PAYLOAD_TOO_LARGE).
+    const CHUNK_SIZE = 4 * 1024 * 1024
     let sessionId = sessionIdToRetry || ''
     let startOffset = 0
 
