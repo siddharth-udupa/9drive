@@ -227,6 +227,30 @@ div.border.border-slate-200,
     0 1px 10px rgba(0, 0, 0, 0.08) !important;
 }
 
+/* Floating glass panels (notifications, upload status, modals).
+   Keep the glossy blur, but use a denser fill so content stays readable. */
+.glass-popover,
+:root .glass-popover,
+:root .glass-popover:hover {
+  background: rgba(255, 255, 255, 0.9) !important;
+  border: 1px solid rgba(255, 255, 255, 0.7) !important;
+  background-clip: padding-box;
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  box-shadow:
+    0 20px 50px rgba(15, 23, 42, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+}
+
+:root.dark .glass-popover,
+:root.dark .glass-popover:hover {
+  background: rgba(17, 24, 39, 0.92) !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
 /* Inputs and Select Boxes */
 input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   background: var(--input-bg) !important;
