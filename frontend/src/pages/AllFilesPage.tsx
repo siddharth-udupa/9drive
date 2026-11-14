@@ -36,6 +36,7 @@ const sizeActiveClasses: Record<FolderSizeScale, string> = {
 type FileViewMode = 'list' | 'grid'
 
 const fileViewStorageKey = '9drive:all-files-view-mode'
+const FILE_PAGE_SIZE = 100
 
 function getStoredFileViewMode(): FileViewMode {
   const stored = localStorage.getItem(fileViewStorageKey)
@@ -79,6 +80,7 @@ export function AllFilesPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const activeFolderId = searchParams.get('folderId')
   const searchQuery = searchParams.get('q')?.trim() ?? ''
+  const filtersKey = searchParams.toString()
   const [uploadOpen, setUploadOpen] = useState(false)
   const [folderOpen, setFolderOpen] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
@@ -95,6 +97,10 @@ export function AllFilesPage() {
   const [previewError, setPreviewError] = useState('')
   const [previewLoading, setPreviewLoading] = useState(false)
   const [files, setFiles] = useState<FileItem[]>([])
+  const [totalFiles, setTotalFiles] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const [page, setPage] = useState(1)
+  const [filesLoading, setFilesLoading] = useState(false)
   const [folders, setFolders] = useState<FolderItem[]>([])
   const [allFolders, setAllFolders] = useState<FolderItem[]>([])
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
@@ -129,6 +135,9 @@ export function AllFilesPage() {
   const [inviteMessage, setInviteMessage] = useState('')
   const [inviting, setInviting] = useState(false)
   const previewVideoRef = useRef<HTMLVideoElement | null>(null)
+  const filesRequestRef = useRef(0)
+  const previousFiltersKey = useRef(filtersKey)
+  const hasLoadedRef = useRef(false)
   const [folderSizeScale, setFolderSizeScale] = useState<FolderSizeScale>(() => {
     const v = localStorage.getItem('9drive:folder-size')
     return (v === 'xs' || v === 'sm' || v === 'md' || v === 'lg') ? v : 'md'
@@ -142,30 +151,64 @@ export function AllFilesPage() {
     localStorage.setItem('9drive:folder-size', scale)
   }
 
-  async function loadFiles() {
-    const params = new URLSearchParams()
-    if (activeFolderId) params.set('folderId', activeFolderId)
-    if (searchQuery) params.set('q', searchQuery)
+  async function loadFiles(targetPage = page) {
+    const requestId = ++filesRequestRef.current
+    setFilesLoading(true)
+    try {
+      const params = new URLSearchParams()
+      if (activeFolderId) params.set('folderId', activeFolderId)
+      if (searchQuery) params.set('q', searchQuery)
 
-    // Add advanced search filters
-    const kind = searchParams.get('kind')
-    const accountId = searchParams.get('accountId')
-    const minSize = searchParams.get('minSize')
-    const maxSize = searchParams.get('maxSize')
-    const startDate = searchParams.get('startDate')
-    const endDate = searchParams.get('endDate')
+      // Add advanced search filters
+      const kind = searchParams.get('kind')
+      const accountId = searchParams.get('accountId')
+      const minSize = searchParams.get('minSize')
+      const maxSize = searchParams.get('maxSize')
+      const startDate = searchParams.get('startDate')
+      const endDate = searchParams.get('endDate')
 
-    if (kind) params.set('kind', kind)
-    if (accountId) params.set('accountId', accountId)
-    if (minSize) params.set('minSize', minSize)
-    if (maxSize) params.set('maxSize', maxSize)
-    if (startDate) params.set('startDate', startDate)
-    if (endDate) params.set('endDate', endDate)
+      if (kind) params.set('kind', kind)
+      if (accountId) params.set('accountId', accountId)
+      if (minSize) params.set('minSize', minSize)
+      if (maxSize) params.set('maxSize', maxSize)
+      if (startDate) params.set('startDate', startDate)
+      if (endDate) params.set('endDate', endDate)
 
-    const query = params.toString()
-    const path = query ? `/files?${query}` : '/files'
-    const data = await apiFetch<{ files: BackendFile[] }>(path)
-    setFiles(data.files.map(mapFile))
+      params.set('page', String(targetPage))
+      params.set('pageSize', String(FILE_PAGE_SIZE))
+
+      const data = await apiFetch<{ files: BackendFile[]; total?: number; totalPages?: number }>(`/files?${params.toString()}`)
+      if (requestId !== filesRequestRef.current) return
+
+      const mappedFiles = data.files.map(mapFile)
+
+      // Older backends ignore page/pageSize and return every file. Keep the DOM
+      // small by paginating that response client-side until the API is updated.
+      if (data.totalPages === undefined) {
+        const fallbackTotalPages = Math.max(1, Math.ceil(mappedFiles.length / FILE_PAGE_SIZE))
+        if (targetPage > fallbackTotalPages) {
+          setPage(fallbackTotalPages)
+          return
+        }
+        const start = (targetPage - 1) * FILE_PAGE_SIZE
+        setFiles(mappedFiles.slice(start, start + FILE_PAGE_SIZE))
+        setTotalFiles(mappedFiles.length)
+        setTotalPages(fallbackTotalPages)
+        return
+      }
+
+      const nextTotalPages = Math.max(1, data.totalPages)
+      if (targetPage > nextTotalPages) {
+        setPage(nextTotalPages)
+        return
+      }
+
+      setFiles(mappedFiles)
+      setTotalFiles(data.total ?? data.files.length)
+      setTotalPages(nextTotalPages)
+    } finally {
+      if (requestId === filesRequestRef.current) setFilesLoading(false)
+    }
   }
 
   async function loadFolders() {
@@ -178,8 +221,8 @@ export function AllFilesPage() {
     setAllFolders(allData.folders.map(mapFolder))
   }
 
-  async function loadAll() {
-    await Promise.all([loadFiles(), loadFolders()])
+  async function loadAll(targetPage = page) {
+    await Promise.all([loadFiles(targetPage), loadFolders()])
   }
 
   async function handleDropItem(fileId: string, targetFolderId: string) {
@@ -203,9 +246,24 @@ export function AllFilesPage() {
   }
 
   useEffect(() => {
-    loadAll().catch((error) => setMessage(error instanceof Error ? error.message : 'Failed to load files'))
-    setSelectedFileIds(new Set())
-  }, [activeFolderId, searchQuery])
+    const filtersChanged = previousFiltersKey.current !== filtersKey
+    previousFiltersKey.current = filtersKey
+
+    if (filtersChanged) {
+      setSelectedFileIds(new Set())
+      if (page !== 1) {
+        hasLoadedRef.current = false
+        setPage(1)
+        return
+      }
+    }
+
+    const shouldLoadFolders = !hasLoadedRef.current || filtersChanged
+    hasLoadedRef.current = true
+
+    const request = shouldLoadFolders ? loadAll(page) : loadFiles(page)
+    request.catch((error) => setMessage(error instanceof Error ? error.message : 'Failed to load files'))
+  }, [filtersKey, page])
 
   useEffect(() => {
     async function loadConnectedAccounts() {
@@ -375,6 +433,12 @@ export function AllFilesPage() {
   function changeFileViewMode(mode: FileViewMode) {
     setFileViewMode(mode)
     localStorage.setItem(fileViewStorageKey, mode)
+  }
+
+  function changePage(nextPage: number) {
+    setSelectedFileIds(new Set())
+    setPage(Math.max(1, nextPage))
+    window.scrollTo({ top: 0 })
   }
 
   function openFolderMenu(event: MouseEvent<HTMLElement>, folder: FolderItem) {
@@ -620,11 +684,15 @@ export function AllFilesPage() {
 
   useEffect(() => {
     function handleUploadCompleted() {
-      loadAll().catch(() => undefined)
+      if (page !== 1) {
+        setPage(1)
+        return
+      }
+      loadFiles(1).catch(() => undefined)
     }
     window.addEventListener('9drive:upload-completed', handleUploadCompleted)
     return () => window.removeEventListener('9drive:upload-completed', handleUploadCompleted)
-  }, [activeFolderId])
+  }, [filtersKey, page])
 
   useEffect(() => {
     const sizeLabels: FolderSizeScale[] = ['xs', 'sm', 'md', 'lg']
@@ -664,7 +732,7 @@ export function AllFilesPage() {
         </Button>
       </div>
     )
-  }, [syncingDrive, folderSizeScale])
+  }, [syncingDrive, folderSizeScale, filtersKey, page])
 
 
   const recentFolders = folders.slice(0, 4)
@@ -688,7 +756,7 @@ export function AllFilesPage() {
 
   return (
     <>
-      <div onContextMenu={openEmptyContextMenu} className="min-h-[620px] w-full min-w-0">
+      <div onContextMenu={openEmptyContextMenu} className="min-h-155 w-full min-w-0">
       <PageHeader title={activeFolder ? <span className="block min-w-0 truncate"><button className="text-blue-600 hover:underline" onClick={closeFolder}>All Files</button>{folderBreadcrumbs.map((folder, index) => <span key={folder.id}><span className="text-slate-400"> / </span>{index === folderBreadcrumbs.length - 1 ? <span>{folder.name}</span> : <button className="text-blue-600 hover:underline" onClick={() => folder.id && openFolderById(folder.id)}>{folder.name}</button>}</span>)}</span> : 'All Files'} />
       {/* Action buttons row — visible on mobile/tablet, hidden on desktop (desktop uses header slot) */}
       <div className="mt-4 flex flex-wrap items-center gap-2 lg:hidden">
@@ -717,15 +785,29 @@ export function AllFilesPage() {
       </div>
       {cutFolder ? <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-700"><ClipboardPaste className="mr-2 inline h-4 w-4" />Cut folder: {cutFolder.name}. Press Ctrl+V or right-click empty area to paste here.</p> : null}
       {files.length === 0 ? (
-        <Card className="mt-3 p-5 bg-white/10 backdrop-blur-sm border border-white/20 dark:bg-transparent dark:border-0 dark:p-0 dark:shadow-none">
+        <Card className="mt-3 p-5 dark:bg-transparent dark:border-0 dark:p-0 dark:shadow-none">
           <p className="text-sm text-slate-500">{searchQuery ? `No files found for "${searchQuery}".` : activeFolder ? 'No files in this folder yet.' : 'No uploaded files yet. Connect Google Drive in Settings, then upload a file.'}</p>
         </Card>
       ) : (
-        <Card className="mt-3 p-4 sm:p-5 bg-white/10 backdrop-blur-sm border border-white/20 dark:bg-transparent dark:border-0 dark:p-0 dark:shadow-none">
+        <Card className="mt-3 p-4 sm:p-5 dark:bg-transparent dark:border-0 dark:p-0 dark:shadow-none" aria-busy={filesLoading}>
           {fileViewMode === 'grid' ? (
             <FileGrid files={files} selectedFileIds={selectedFileIds} sizeScale={folderSizeScale} onToggleFile={toggleFileSelection} onFileContextMenu={openContext} />
           ) : (
             <FileTable files={files} selectedFileIds={selectedFileIds} allSelected={allVisibleSelected} onToggleFile={toggleFileSelection} onToggleAll={toggleAllVisibleFiles} onFileContextMenu={openContext} />
+          )}
+          {totalPages > 1 ? (
+            <div className="mt-4 flex flex-col gap-3 border-t border-slate-200/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs font-semibold text-slate-500">
+                Showing {((page - 1) * FILE_PAGE_SIZE + 1).toLocaleString()}–{Math.min(page * FILE_PAGE_SIZE, totalFiles).toLocaleString()} of {totalFiles.toLocaleString()} files
+              </p>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" disabled={page <= 1 || filesLoading} onClick={() => changePage(page - 1)}>Previous</Button>
+                <span className="text-xs font-bold text-slate-600">Page {page} of {totalPages}</span>
+                <Button variant="outline" size="sm" disabled={page >= totalPages || filesLoading} onClick={() => changePage(page + 1)}>Next</Button>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-4 border-t border-slate-200/60 pt-4 text-xs font-semibold text-slate-500">{totalFiles.toLocaleString()} files</p>
           )}
         </Card>
       )}
@@ -832,7 +914,7 @@ export function AllFilesPage() {
           <div className="flex justify-end gap-3 pt-2"><Button type="button" variant="outline" onClick={() => setInviteOpen(false)}>Cancel</Button><Button disabled={inviting}>{inviting ? 'Sending...' : 'Send Invite'}</Button></div>
         </form>
       </DummyModal>
-      <DummyModal open={previewOpen} title="File Preview" description={activeFile?.name ?? ''} onClose={closePreview} className="overflow-hidden sm:max-w-[95vw] xl:max-w-[1400px]">
+      <DummyModal open={previewOpen} title="File Preview" description={activeFile?.name ?? ''} onClose={closePreview} className="overflow-hidden sm:max-w-[95vw] xl:max-w-350">
         <div className="flex h-[72dvh] w-full items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50 sm:h-[80vh]">
           {previewLoading ? <div className="p-6 text-center text-sm font-semibold text-slate-500">Loading preview...</div> : null}
           {previewError ? <div className="p-6 text-center text-sm text-red-600">{previewError}</div> : null}

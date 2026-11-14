@@ -4,17 +4,19 @@ import { AvatarStack } from '@/components/drive/AvatarStack'
 import { FileIcon } from '@/components/drive/FileIcon'
 import type { FileItem } from '@/data/drive-data'
 import { apiFetch } from '@/lib/api'
+import { useMediaQuery } from '@/lib/use-media-query'
 
 export function FileTable({ files, mode = 'default', selectedFileIds = new Set<string>(), allSelected = false, onFileContextMenu, onToggleFile, onToggleAll }: { files: FileItem[]; mode?: 'default' | 'shared' | 'recent' | 'starred' | 'archived'; selectedFileIds?: Set<string>; allSelected?: boolean; onFileContextMenu?: (event: MouseEvent<HTMLElement>, file: FileItem) => void; onToggleFile?: (file: FileItem) => void; onToggleAll?: () => void }) {
   const [copiedFileId, setCopiedFileId] = useState<string | null>(null)
+  const isDesktop = useMediaQuery('(min-width: 640px)')
 
   return (
     <div className="mt-4">
       {/* Mobile card view */}
-      <div className="grid gap-2.5 sm:hidden">
+      {!isDesktop ? <div className="grid gap-2.5">
         {onToggleAll ? (
           <label className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold shadow-sm">
-            <span>Select all files</span>
+            <span>Select this page</span>
             <input type="checkbox" className="h-5 w-5 accent-blue-600" checked={allSelected} onChange={onToggleAll} />
           </label>
         ) : null}
@@ -40,16 +42,16 @@ export function FileTable({ files, mode = 'default', selectedFileIds = new Set<s
             </article>
           )
         })}
-      </div>
+      </div> : null}
 
       {/* Desktop table view */}
-      <div className="hidden overflow-x-auto sm:block">
-        <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+      {isDesktop ? <div className="overflow-x-auto">
+        <table className="w-full min-w-190 border-collapse text-left text-sm">
           <thead>
             <tr className="border-b border-slate-200/20 text-slate-950">
               <th className="w-9 py-2.5"><input type="checkbox" className="h-4 w-4 accent-blue-600" checked={allSelected} onChange={onToggleAll} /></th>
               <th className="py-2.5 font-extrabold">Name</th>
-              {mode === 'default' ? <th className="py-2.5 font-extrabold text-slate-500 font-semibold">Folder</th> : null}
+              {mode === 'default' ? <th className="py-2.5 font-extrabold text-slate-500">Folder</th> : null}
               {mode === 'shared' ? <th className="py-2.5 font-extrabold">Owner</th> : null}
               {mode === 'recent' ? <th className="py-2.5 font-extrabold">Last Opened</th> : null}
               {mode === 'starred' ? <th className="py-2.5 font-extrabold">Starred On</th> : null}
@@ -67,7 +69,7 @@ export function FileTable({ files, mode = 'default', selectedFileIds = new Set<s
                 <td className="py-2.5 font-semibold">
                   <span className="flex min-w-0 items-center gap-2.5">
                     {mode === 'starred' ? <Star className="h-4 w-4 shrink-0 fill-yellow-400 text-yellow-400" /> : <FileIcon kind={file.kind} />}
-                    <span className="truncate max-w-[200px] lg:max-w-[280px]" title={file.name}>{file.name}</span>
+                    <span className="truncate max-w-50 lg:max-w-70" title={file.name}>{file.name}</span>
                   </span>
                 </td>
                 {/* Folder path column — only in default mode */}
@@ -76,7 +78,7 @@ export function FileTable({ files, mode = 'default', selectedFileIds = new Set<s
                     {file.folderName ? (
                       <span className="flex items-center gap-1 text-xs font-medium text-blue-500">
                         <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                        <span className="truncate max-w-[120px]">{file.folderName}</span>
+                        <span className="truncate max-w-30">{file.folderName}</span>
                       </span>
                     ) : (
                       <span className="text-xs text-slate-300">—</span>
@@ -138,7 +140,7 @@ export function FileTable({ files, mode = 'default', selectedFileIds = new Set<s
             ))}
           </tbody>
         </table>
-      </div>
+      </div> : null}
     </div>
   )
 }

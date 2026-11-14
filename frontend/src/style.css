@@ -211,24 +211,20 @@ aside {
 div.border.border-slate-200,
 .card {
   background: var(--card-bg) !important;
-  backdrop-filter: blur(20px) saturate(130%);
-  -webkit-backdrop-filter: blur(20px) saturate(130%);
   border: 1px solid var(--card-border) !important;
   box-shadow:
     0 10px 30px var(--shadow-color),
     0 1px 3px rgba(0, 0, 0, 0.05) !important;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .rounded-xl.border-slate-200:hover,
 .rounded-2xl.border-slate-200:hover {
   background: var(--card-bg) !important;
-  filter: brightness(1.05);
   border-color: var(--outline-btn-border) !important;
   box-shadow:
     0 15px 35px var(--shadow-hover),
     0 1px 10px rgba(0, 0, 0, 0.08) !important;
-  transform: translateY(-2px);
 }
 
 /* Inputs and Select Boxes */

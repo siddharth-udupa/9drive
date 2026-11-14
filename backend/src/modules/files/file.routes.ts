@@ -43,7 +43,9 @@ fileRouter.get('/', async (req: AuthRequest, res, next) => {
       minSize: z.coerce.number().optional(),
       maxSize: z.coerce.number().optional(),
       startDate: z.string().datetime().optional(),
-      endDate: z.string().datetime().optional()
+      endDate: z.string().datetime().optional(),
+      page: z.coerce.number().int().min(1).optional(),
+      pageSize: z.coerce.number().int().min(1).max(200).optional()
     }).parse(req.query)
 
     const typeFilters: Record<string, string[]> = {
@@ -75,15 +77,27 @@ fileRouter.get('/', async (req: AuthRequest, res, next) => {
       } : {})
     }
 
-    const files = await prisma.file.findMany({
-      where,
-      include: {
-        connectedAccount: { select: { id: true, email: true, provider: true } },
-        folder: { select: { id: true, name: true } }
-      },
-      orderBy: { createdAt: 'desc' }
+    const paginated = query.page !== undefined || query.pageSize !== undefined
+    const page = query.page ?? 1
+    const pageSize = query.pageSize ?? 100
+
+    const [files, total] = await Promise.all([
+      prisma.file.findMany({
+        where,
+        include: {
+          connectedAccount: { select: { id: true, email: true, provider: true } },
+          folder: { select: { id: true, name: true } }
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        ...(paginated ? { skip: (page - 1) * pageSize, take: pageSize } : {})
+      }),
+      paginated ? prisma.file.count({ where }) : Promise.resolve(0)
+    ])
+
+    return res.json({
+      files: files.map((file) => ({ ...file, sizeBytes: file.sizeBytes.toString() })),
+      ...(paginated ? { total, page, pageSize, totalPages: Math.ceil(total / pageSize) } : {})
     })
-    return res.json({ files: files.map((file) => ({ ...file, sizeBytes: file.sizeBytes.toString() })) })
   } catch (error) {
     return next(error)
   }
